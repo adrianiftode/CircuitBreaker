@@ -13,7 +13,7 @@ namespace CircuitBreakerLib
     /// The implementations of the decision of closing the circuit and the strategy of reopening can be outside this class and hooked via the corresponding interfaces. This class uses also defaults for these interfaces. 
     /// </remarks>
 
-    public class CircuitBreaker : ICircuitBreaker
+    public sealed class CircuitBreaker : ICircuitBreaker, IDisposable
     {
         private ReaderWriterLockSlim _readerWriterLockSlim = new ReaderWriterLockSlim();
         private bool _open = true;
@@ -47,7 +47,7 @@ namespace CircuitBreakerLib
         /// <summary>
         /// Executes the external system's action if the circuit breaker is open, otherwise throws the exception that closed this circuit so the external system is not accessed by other clients of this CircuitBreaker.
         /// The circuit is closed if the original exception matches the closing strategy.
-        /// A reopening operation is started if the circuit get's closed.
+        /// A reopening operation is started after the circuit is closed.
         /// </summary>
         /// <param name="action">The delegate which encapsulates the access to the external system.</param>
         public void PassThrough(Action action)
@@ -75,7 +75,7 @@ namespace CircuitBreakerLib
             }
         }
         /// <summary>
-        /// Reopens the circuit.
+        /// Open the circuit.
         /// </summary>
         public void SwitchOn()
         {
@@ -83,7 +83,7 @@ namespace CircuitBreakerLib
         }
 
         /// <summary>
-        /// Opens the circuit in a concurrent fashion. If another thread tries to close this circuit, then it has to wait first for this operation to finish.
+        /// Open the circuit in a concurrent fashion. If another thread tries to close this circuit, then it has to wait first for this operation to finish.
         /// </summary>
         private void Open()
         {
@@ -92,6 +92,8 @@ namespace CircuitBreakerLib
             _readerWriterLockSlim.ExitWriteLock();
         }
 
+        /// <summary>
+        /// Close the circuit in a concurrent fashion. If another thread tries to close this circuit, then it has to wait first for this operation to finish.
         private void Close()
         {
             _readerWriterLockSlim.EnterWriteLock();
@@ -127,6 +129,17 @@ namespace CircuitBreakerLib
             if (reopenCircuitStrategy == null) throw new ArgumentNullException(nameof(reopenCircuitStrategy));
 
             return new CircuitBreaker(this._closeCircuitStrategy, reopenCircuitStrategy);
+        }
+
+        /// <summary>
+        /// Dispose the ReaderWriterLockSlim used by this class.
+        /// </summary>
+        public void Dispose()
+        {
+            if (_readerWriterLockSlim != null)
+            {
+                _readerWriterLockSlim.Dispose();
+            }
         }
     }
 }
