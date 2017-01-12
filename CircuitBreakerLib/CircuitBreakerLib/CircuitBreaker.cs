@@ -1,4 +1,6 @@
-﻿using System;
+﻿using CircuitBreakerLib.Strategies;
+using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CircuitBreakerLib
@@ -10,6 +12,8 @@ namespace CircuitBreakerLib
         private bool open = true;
         private ICloseCircuitStrategy _closeCircuitStrategy;
         private IReopenCircuitStrategy _reopenCircuitStrategy;
+        private Exception exception;
+        private ReaderWriterLockSlim readerWriterLockSlim = new ReaderWriterLockSlim();
 
         public CircuitBreaker()
         {
@@ -45,60 +49,42 @@ namespace CircuitBreakerLib
         }
         private void Open()
         {
-            lock (_mutex)
-            {
-                open = true;
-            }
+            readerWriterLockSlim.EnterWriteLock();
+            open = true;
+            readerWriterLockSlim.ExitWriteLock();
         }
         private void Close()
         {
-            lock (_mutex)
-            {
-                open = false;
-            }
+            readerWriterLockSlim.EnterWriteLock();
+            open = false;
+            readerWriterLockSlim.ExitWriteLock();
         }
 
-        public bool TryUse(Action action)
+        public void PassThrough(Action action)
         {
-            try
-            {
-                if (open)
-                {
-                    action();
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                if (_closeCircuitStrategy.CloseWhen(ex))
-                {
-                    Close();
-                    _reopenCircuitStrategy.PlanForOpen(this);
-                }
-                throw new CircuitBreakerException(ex);
-            }
-            return false;
-        }
-
-        public bool IsOpen => open;
-
-        class DelayStrategy : ICloseCircuitStrategy, IReopenCircuitStrategy
-        {
-            private int delayMiliseconds = 200;
-            public void PlanForOpen(ICircuitBreaker circuitBreaker)
+            if (open)
             {
                 try
                 {
-                    var task = Task.Delay(delayMiliseconds)
-                                   .ContinueWith(t => circuitBreaker.SwitchOn());
+                    action();
                 }
-                catch (AggregateException ex)
+                catch (Exception ex)
                 {
-                    throw ex.InnerException;
+                    exception = ex;
+                    if (_closeCircuitStrategy.CloseWhen(ex))
+                    {
+                        Close();
+                        _reopenCircuitStrategy.PlanForOpen(this);
+                    }
+                    throw ex;
                 }
             }
-
-            public bool CloseWhen(Exception ex) => ex != null;
+            else
+            {
+                throw exception;
+            }
         }
+
+        public bool IsOpen => open;
     }
 }

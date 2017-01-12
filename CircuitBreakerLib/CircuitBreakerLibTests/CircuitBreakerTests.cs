@@ -59,23 +59,42 @@ namespace CircuitBreakerLibTests
         }
 
         [Fact]
-        public void Swould_Throw_CircuitBreakerException_When_Action_Throws()
+        public void Swould_Throw_Exception_When_Action_Throws()
         {
             var circuitBreaker = new CircuitBreaker();
 
-            Action act = () => circuitBreaker.TryUse(() => { throw null; });
+            Action act = () => circuitBreaker.PassThrough(() => { throw null; });
 
-            act.ShouldThrowExactly<CircuitBreakerException>();
+            act.ShouldThrowExactly<NullReferenceException>();
         }
 
         [Fact]
-        public void CircuitBreakerException_Should_Contain_InnerException_When_Action_Throws()
+        public void Swould_Throw_The_Original_Exception_If_Accessed_After_IsClosed()
         {
             var circuitBreaker = new CircuitBreaker();
 
-            Action act = () => circuitBreaker.TryUse(() => { throw null; });
+            Action act1 = () => circuitBreaker.PassThrough(() => { throw null; });
+            Action act2 = () => circuitBreaker.PassThrough(() => { });
 
-            act.ShouldThrowExactly<CircuitBreakerException>().And.InnerException.Should().BeOfType<NullReferenceException>();
+            act1.ShouldThrowExactly<NullReferenceException>();
+            act2.ShouldThrowExactly<NullReferenceException>();
+        }
+
+        [Fact]
+        public void Swould_Not_Throw_The_Original_Exception_If_Accessed_After_Is_Reopen()
+        {
+            var circuitBreaker = new CircuitBreaker();
+            var reopenStrategyMock = new Mock<IReopenCircuitStrategy>();
+            reopenStrategyMock
+                .Setup(c => c.PlanForOpen(It.IsAny<ICircuitBreaker>()))
+                .Callback(() => circuitBreaker.SwitchOn());
+            circuitBreaker.WithReopenCircuitStrategy(reopenStrategyMock.Object);
+
+            Action act1 = () => circuitBreaker.PassThrough(() => { throw null; });
+            Action act2 = () => circuitBreaker.PassThrough(() => {; });
+
+            act1.ShouldThrowExactly<NullReferenceException>();
+            act2.ShouldNotThrow();
         }
 
         [Fact]
@@ -85,7 +104,7 @@ namespace CircuitBreakerLibTests
 
             try
             {
-                circuitBreaker.TryUse(() => { throw null; });
+                circuitBreaker.PassThrough(() => { throw null; });
             }
             catch { }
 
