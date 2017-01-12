@@ -8,12 +8,12 @@ namespace CircuitBreakerLib
 
     public class CircuitBreaker : ICircuitBreaker
     {
-        private readonly object _mutex = new object();
-        private bool open = true;
+        private ReaderWriterLockSlim _readerWriterLockSlim = new ReaderWriterLockSlim();
+        private bool _open = true;
+        private Exception _systemException = null;
+
         private ICloseCircuitStrategy _closeCircuitStrategy;
         private IReopenCircuitStrategy _reopenCircuitStrategy;
-        private Exception exception;
-        private ReaderWriterLockSlim readerWriterLockSlim = new ReaderWriterLockSlim();
 
         public CircuitBreaker()
         {
@@ -30,6 +30,50 @@ namespace CircuitBreakerLib
             _reopenCircuitStrategy = reopenCircuitStrategy;
         }
 
+        public void PassThrough(Action action)
+        {
+            if (_open)
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception exception)
+                {
+                    _systemException = exception;
+                    if (_closeCircuitStrategy.CloseWhen(exception))
+                    {
+                        Close();
+                        _reopenCircuitStrategy.PlanForOpen(this);
+                    }
+                    throw exception;
+                }
+            }
+            else
+            {
+                throw _systemException;
+            }
+        }
+
+        public void SwitchOn()
+        {
+            Open();
+        }
+        private void Open()
+        {
+            _readerWriterLockSlim.EnterWriteLock();
+            _open = true;
+            _readerWriterLockSlim.ExitWriteLock();
+        }
+        private void Close()
+        {
+            _readerWriterLockSlim.EnterWriteLock();
+            _open = false;
+            _readerWriterLockSlim.ExitWriteLock();
+        }
+
+        public bool IsOpen => _open;
+
         public void WithCloseCircuitStrategy(ICloseCircuitStrategy closeCircuitStrategy)
         {
             if (closeCircuitStrategy == null) throw new ArgumentNullException(nameof(closeCircuitStrategy));
@@ -43,48 +87,5 @@ namespace CircuitBreakerLib
 
             _reopenCircuitStrategy = reopenCircuitStrategy;
         }
-        public void SwitchOn()
-        {
-            Open();
-        }
-        private void Open()
-        {
-            readerWriterLockSlim.EnterWriteLock();
-            open = true;
-            readerWriterLockSlim.ExitWriteLock();
-        }
-        private void Close()
-        {
-            readerWriterLockSlim.EnterWriteLock();
-            open = false;
-            readerWriterLockSlim.ExitWriteLock();
-        }
-
-        public void PassThrough(Action action)
-        {
-            if (open)
-            {
-                try
-                {
-                    action();
-                }
-                catch (Exception ex)
-                {
-                    exception = ex;
-                    if (_closeCircuitStrategy.CloseWhen(ex))
-                    {
-                        Close();
-                        _reopenCircuitStrategy.PlanForOpen(this);
-                    }
-                    throw ex;
-                }
-            }
-            else
-            {
-                throw exception;
-            }
-        }
-
-        public bool IsOpen => open;
     }
 }

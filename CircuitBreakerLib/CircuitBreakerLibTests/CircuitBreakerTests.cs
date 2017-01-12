@@ -69,6 +69,16 @@ namespace CircuitBreakerLibTests
         }
 
         [Fact]
+        public void Swould_NotThrow_Exception_When_Action_Doesnt_Throw()
+        {
+            var circuitBreaker = new CircuitBreaker();
+
+            Action act = () => circuitBreaker.PassThrough(() => {; });
+
+            act.ShouldNotThrow();
+        }
+
+        [Fact]
         public void Swould_Throw_The_Original_Exception_If_Accessed_After_IsClosed()
         {
             var circuitBreaker = new CircuitBreaker();
@@ -109,6 +119,37 @@ namespace CircuitBreakerLibTests
             catch { }
 
             circuitBreaker.IsOpen.Should().BeFalse();
+        }
+
+        [Fact]
+        public void Action_Should_Execute_When_Is_CircuitBreaker_Is_Open()
+        {
+            var circuitBreaker = new CircuitBreaker();
+            bool actionState = false;
+            Action action = () => actionState = true;
+
+            circuitBreaker.PassThrough(action);
+
+            actionState.Should().BeTrue();
+        }
+
+        [Fact]
+        public void Action_Should_Not_Execute_When_Is_CircuitBreaker_Is_Closed()
+        {
+            var circuitBreaker = new CircuitBreaker();
+            bool actionState = false;
+            Action action = () => actionState = true;
+            var reopenStrategyMock = new Mock<IReopenCircuitStrategy>();
+            circuitBreaker.WithReopenCircuitStrategy(reopenStrategyMock.Object); //never reopen
+
+            try
+            {
+                circuitBreaker.PassThrough(() => { throw null; });
+                circuitBreaker.PassThrough(action);
+            }
+            catch { }
+
+            actionState.Should().BeFalse();
         }
     }
 }
