@@ -98,7 +98,7 @@ namespace CircuitBreakerLibTests
             reopenStrategyMock
                 .Setup(c => c.PlanForOpen(It.IsAny<ICircuitBreaker>()))
                 .Callback(() => circuitBreaker.SwitchOn());
-            circuitBreaker.WithReopenCircuitStrategy(reopenStrategyMock.Object);
+            circuitBreaker = circuitBreaker.WithReopenCircuitStrategy(reopenStrategyMock.Object);
 
             Action act1 = () => circuitBreaker.PassThrough(() => { throw null; });
             Action act2 = () => circuitBreaker.PassThrough(() => {; });
@@ -150,6 +150,42 @@ namespace CircuitBreakerLibTests
             catch { }
 
             actionState.Should().BeFalse();
+        }
+
+        [Fact]
+        public void Should_Not_Close_When_Close_Strategy_Does_Not_Close()
+        {
+            var circuitBreaker = new CircuitBreaker();
+            var closeCircuitStrategyMock = new Mock<ICloseCircuitStrategy>();
+            closeCircuitStrategyMock.Setup(c => c.CloseWhen(It.IsAny<Exception>()))
+                                    .Returns(false);
+            circuitBreaker = circuitBreaker.WithCloseCircuitStrategy(closeCircuitStrategyMock.Object);
+
+            try
+            {
+                circuitBreaker.PassThrough(() => { throw null; });
+            }
+            catch { }
+
+            circuitBreaker.IsOpen.Should().BeTrue();
+        }
+
+        [Fact]
+        public void Should_Close_When_Close_Strategy_Does_Close()
+        {
+            var circuitBreaker = new CircuitBreaker();
+            var closeCircuitStrategyMock = new Mock<ICloseCircuitStrategy>();
+            closeCircuitStrategyMock.Setup(c => c.CloseWhen(It.IsAny<Exception>()))
+                                    .Returns(true);
+            circuitBreaker = circuitBreaker.WithCloseCircuitStrategy(closeCircuitStrategyMock.Object);
+
+            try
+            {
+                circuitBreaker.PassThrough(() => { throw null; });
+            }
+            catch { }
+
+            circuitBreaker.IsOpen.Should().BeFalse();
         }
     }
 }
