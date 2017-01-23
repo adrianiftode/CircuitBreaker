@@ -43,7 +43,6 @@
     <Compile Include="CircuitBreaker.cs" />
     <Compile Include="CircuitBreakerScope.cs" />
     <Compile Include="ICircuitBreaker.cs" />
-    <Compile Include="ICircuitBreakerScope.cs" />
     <Compile Include="IOpenCircuitStrategy.cs" />
     <Compile Include="IReopenCircuitStrategy.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

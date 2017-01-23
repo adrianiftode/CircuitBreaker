@@ -3,8 +3,8 @@
 namespace CircuitBreakerLib
 {
     /// <summary>
-    /// Capable to detect failures of an external system 
-    /// and encapsulates logic to prevent further access to the external system.
+    /// Remeber the failure of an external system 
+    /// and encapsulates logic to prevent further access to that.
     /// </summary>
     public interface ICircuitBreaker
     {
@@ -18,16 +18,23 @@ namespace CircuitBreakerLib
         /// The circuit should allow a client to use the external system and open it if the external system failed.
         /// </summary>
         /// <param name="action">The usage of the external system.</param>
-        /// <remarks>The implementation should rethrow the external system's failure for every new request, 
-        /// even if the circuit is in the open state.</remarks>
+        /// <remarks>The implementation should rethrow the external 
+        /// system's failure for every new request, 
+        /// even if the circuit is in the closed state.</remarks>
         void Enter(Action action);
         /// <summary>
         /// Try to use the circuit breaker, but if it is open, then rethrow the external system's failure.
         /// </summary>
         void TryEnterOtherwiseRethrow();
         /// <summary>
-        /// The implementation should provide a way to close the circuit breaker on demand.
+        /// Provide a way to close the circuit breaker on demand.
         /// </summary>
         void CloseBack();
+        /// <summary>
+        /// Support for the .Net using statement 
+        /// that can wrap a section of code that uses the external system.
+        /// </summary>
+        /// <returns>A disposable object.</returns>
+        IDisposable GetScope();
     }
 }

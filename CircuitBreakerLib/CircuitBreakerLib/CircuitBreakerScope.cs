@@ -3,7 +3,14 @@ using System.Runtime.ExceptionServices;
 
 namespace CircuitBreakerLib
 {
-    public class CircuitBreakerScope : ICircuitBreakerScope, IDisposable
+    /// <summary>
+    /// Use the circuit to enter in its section on this object's creation 
+    /// and set the failure, if any, at the Dispose call.
+    /// 
+    /// The access to the external system can be wraped with an `using` statement, 
+    /// so we can use the fact that the Dispose method will always be called at the end of that code block.
+    /// </summary>
+    internal class CircuitBreakerScope : IDisposable
     {
         private ICircuitBreaker _circuit;
 
