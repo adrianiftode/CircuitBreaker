@@ -9,11 +9,11 @@ namespace CircuitBreakerLibTests
     public class CircuitBreakerTests
     {
         [Fact]
-        public void Ctor_Throws_ArgumentNullException_For_NullCloseCircuitStrategy()
+        public void Ctor_Throws_ArgumentNullException_For_Null_CloseBackCircuitStrategy()
         {
-            var reopenCircuitStrategy = Mock.Of<IReopenCircuitStrategy>();
+            var closeBackCircuitStrategy = Mock.Of<ICloseBackCircuitStrategy>();
 
-            Action act = () => new CircuitBreaker(null, reopenCircuitStrategy);
+            Action act = () => new CircuitBreaker(null, closeBackCircuitStrategy);
 
             act.ShouldThrowExactly<ArgumentNullException>();
         }
@@ -21,131 +21,103 @@ namespace CircuitBreakerLibTests
         [Fact]
         public void Ctor_Throws_ArgumentNullException_For_Null_ReopenCircuitStrategy()
         {
-            var closeCircuitStrategy = Mock.Of<ICloseCircuitStrategy>();
+            var openCircuitStrategy = Mock.Of<IOpenCircuitStrategy>();
 
-            Action act = () => new CircuitBreaker(closeCircuitStrategy, null);
-
-            act.ShouldThrowExactly<ArgumentNullException>();
-        }
-
-        [Fact]
-        public void WithCloseCircuitStrategy_Throws_ArgumentNullException_For_NullArg()
-        {
-            var circuitBreaker = new CircuitBreaker();
-
-            Action act = () => circuitBreaker.WithCloseCircuitStrategy(null);
+            Action act = () => new CircuitBreaker(openCircuitStrategy, null);
 
             act.ShouldThrowExactly<ArgumentNullException>();
         }
 
         [Fact]
-        public void WithReopenCircuitStrategy_Throws_ArgumentNullException_For_NullArg()
+        public void Should_Not_Be_Closed_When_Action_Throws()
         {
             var circuitBreaker = new CircuitBreaker();
 
-            Action act = () => circuitBreaker.WithReopenCircuitStrategy(null);
+            try
+            {
+                circuitBreaker.Enter(() => { throw null; });
+            }
+            catch { }
 
-            act.ShouldThrowExactly<ArgumentNullException>();
+            circuitBreaker.IsClosed.Should().BeFalse();
         }
 
         [Fact]
-        public void ShouldBeOpen_When_SwitchOn()
+        public void Should_Be_Closed_When_CloseBack()
         {
             var circuitBreaker = new CircuitBreaker();
 
-            circuitBreaker.SwitchOn();
+            circuitBreaker.CloseBack();
 
-            circuitBreaker.IsOpen.Should().BeTrue();
+            circuitBreaker.IsClosed.Should().BeTrue();
         }
 
         [Fact]
-        public void Swould_Throw_Exception_When_Action_Throws()
+        public void Should_Throw_Exception_When_Action_Throws()
         {
             var circuitBreaker = new CircuitBreaker();
 
-            Action act = () => circuitBreaker.PassThrough(() => { throw null; });
+            Action act = () => circuitBreaker.Enter(() => { throw null; });
 
             act.ShouldThrowExactly<NullReferenceException>();
         }
 
         [Fact]
-        public void Swould_NotThrow_Exception_When_Action_Doesnt_Throw()
+        public void Should_Not_Throw_Exception_When_Action_Doesnt_Throw()
         {
             var circuitBreaker = new CircuitBreaker();
 
-            Action act = () => circuitBreaker.PassThrough(() => {; });
+            Action act = () => circuitBreaker.Enter(() => {; });
 
             act.ShouldNotThrow();
         }
 
         [Fact]
-        public void Swould_Throw_The_Original_Exception_If_Accessed_After_IsClosed()
+        public void Should_Throw_The_Original_Exception_If_Accessed_When_Is_Open()
         {
             var circuitBreaker = new CircuitBreaker();
 
-            Action act1 = () => circuitBreaker.PassThrough(() => { throw null; });
-            Action act2 = () => circuitBreaker.PassThrough(() => { });
+            Action act1 = () => circuitBreaker.Enter(() => { throw null; });
+            Action act2 = () => circuitBreaker.Enter(() => { });
 
             act1.ShouldThrowExactly<NullReferenceException>();
             act2.ShouldThrowExactly<NullReferenceException>();
         }
 
         [Fact]
-        public void Swould_Not_Throw_The_Original_Exception_If_Accessed_After_Is_Reopen()
+        public void Should_Not_Throw_The_Original_Exception_If_Accessed_After_Is_ClosedBack()
         {
-            var circuitBreaker = new CircuitBreaker();
-            var reopenStrategyMock = new Mock<IReopenCircuitStrategy>();
+            var reopenStrategyMock = new Mock<ICloseBackCircuitStrategy>();
+            CircuitBreaker circuitBreaker = null;
             reopenStrategyMock
-                .Setup(c => c.PlanForOpen(It.IsAny<ICircuitBreaker>()))
-                .Callback(() => circuitBreaker.SwitchOn());
-            circuitBreaker = circuitBreaker.WithReopenCircuitStrategy(reopenStrategyMock.Object);
+                .Setup(c => c.Close(It.IsAny<ICircuitBreaker>()))
+                .Callback(() => circuitBreaker.CloseBack());
+            circuitBreaker = new CircuitBreaker(Mock.Of<IOpenCircuitStrategy>(), reopenStrategyMock.Object);
 
-            Action act1 = () => circuitBreaker.PassThrough(() => { throw null; });
-            Action act2 = () => circuitBreaker.PassThrough(() => {; });
+            Action act1 = () => circuitBreaker.Enter(() => { throw null; });
+            Action act2 = () => circuitBreaker.Enter(() => {; });
 
             act1.ShouldThrowExactly<NullReferenceException>();
             act2.ShouldNotThrow();
         }
 
+
+
         [Fact]
-        public void Should_NotBeOpen_When_Action_Throws()
+        public void Action_Should_Not_Execute_When_CircuitBreaker_Is_Not_Closed()
         {
+            bool actionState = false;
+            Action action = () => actionState = true;
             var circuitBreaker = new CircuitBreaker();
 
             try
             {
-                circuitBreaker.PassThrough(() => { throw null; });
+                circuitBreaker.Enter(() => { throw null; });
             }
             catch { }
-
-            circuitBreaker.IsOpen.Should().BeFalse();
-        }
-
-        [Fact]
-        public void Action_Should_Execute_When_Is_CircuitBreaker_Is_Open()
-        {
-            var circuitBreaker = new CircuitBreaker();
-            bool actionState = false;
-            Action action = () => actionState = true;
-
-            circuitBreaker.PassThrough(action);
-
-            actionState.Should().BeTrue();
-        }
-
-        [Fact]
-        public void Action_Should_Not_Execute_When_Is_CircuitBreaker_Is_Closed()
-        {
-            var circuitBreaker = new CircuitBreaker();
-            bool actionState = false;
-            Action action = () => actionState = true;
-            var reopenStrategyMock = new Mock<IReopenCircuitStrategy>();
-            circuitBreaker.WithReopenCircuitStrategy(reopenStrategyMock.Object); //never reopen
-
             try
             {
-                circuitBreaker.PassThrough(() => { throw null; });
-                circuitBreaker.PassThrough(action);
+                circuitBreaker.Enter(action);
             }
             catch { }
 
@@ -153,39 +125,47 @@ namespace CircuitBreakerLibTests
         }
 
         [Fact]
-        public void Should_Not_Close_When_Close_Strategy_Does_Not_Close()
+        public void Should_Be_Closed_When_OpenCircuitStrategy_Does_Not_Instruct_To_Open()
         {
-            var circuitBreaker = new CircuitBreaker();
-            var closeCircuitStrategyMock = new Mock<ICloseCircuitStrategy>();
-            closeCircuitStrategyMock.Setup(c => c.CloseWhen(It.IsAny<Exception>()))
-                                    .Returns(false);
-            circuitBreaker = circuitBreaker.WithCloseCircuitStrategy(closeCircuitStrategyMock.Object);
+            var openCircuitStrategyMock = new Mock<IOpenCircuitStrategy>();
+            openCircuitStrategyMock
+                .Setup(c => c.OpenWhen(It.IsAny<Exception>()))
+                .Returns(false);
+            var circuitBreaker = new CircuitBreaker(
+                    openCircuitStrategyMock.Object,
+                    Mock.Of<ICloseBackCircuitStrategy>());
 
             try
             {
-                circuitBreaker.PassThrough(() => { throw null; });
+                circuitBreaker.Enter(() => { throw null; });
             }
             catch { }
 
-            circuitBreaker.IsOpen.Should().BeTrue();
+            circuitBreaker.IsClosed.Should().BeTrue();
         }
 
         [Fact]
-        public void Should_Close_When_Close_Strategy_Does_Close()
+        public void Should_Not_Be_Closed_When_OpenCircuitStrategy_Instructs_To_Open()
         {
-            var circuitBreaker = new CircuitBreaker();
-            var closeCircuitStrategyMock = new Mock<ICloseCircuitStrategy>();
-            closeCircuitStrategyMock.Setup(c => c.CloseWhen(It.IsAny<Exception>()))
-                                    .Returns(true);
-            circuitBreaker = circuitBreaker.WithCloseCircuitStrategy(closeCircuitStrategyMock.Object);
+            var openCircuitStrategyMock = new Mock<IOpenCircuitStrategy>();
+            openCircuitStrategyMock
+                .Setup(c => c.OpenWhen(It.IsAny<Exception>()))
+                .Returns(true);
+            var circuitBreaker = new CircuitBreaker(
+                    openCircuitStrategyMock.Object, 
+                    Mock.Of<ICloseBackCircuitStrategy>());
+
 
             try
             {
-                circuitBreaker.PassThrough(() => { throw null; });
+                circuitBreaker.Enter(() => { throw null; });
             }
             catch { }
 
-            circuitBreaker.IsOpen.Should().BeFalse();
+            circuitBreaker.IsClosed.Should().BeFalse();
         }
+
+
+
     }
 }

@@ -41,13 +41,15 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CircuitBreaker.cs" />
+    <Compile Include="CircuitBreakerScope.cs" />
     <Compile Include="ICircuitBreaker.cs" />
-    <Compile Include="ICloseCircuitStrategy.cs" />
+    <Compile Include="ICircuitBreakerScope.cs" />
+    <Compile Include="IOpenCircuitStrategy.cs" />
     <Compile Include="IReopenCircuitStrategy.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Strategies\AlwaysCloseCircuit.cs" />
+    <Compile Include="Strategies\OpenOnAnyFailureCircuit.cs" />
     <Compile Include="Strategies\DelayStrategy.cs" />
-    <Compile Include="Strategies\SmtpCloseCircuit.cs" />
+    <Compile Include="Strategies\OpenOnSmtpFailureCircuit.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

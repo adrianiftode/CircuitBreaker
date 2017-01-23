@@ -9,128 +9,137 @@ namespace CircuitBreakerLib
     /// </summary>
     /// <remarks>
     /// The open/close operations are executed concurrently and are write-only. 
-    /// The pass through operation reads the circuit's state, but does not block.
-    /// The implementations of the decision of closing the circuit and the strategy of reopening can be outside this class and hooked via the corresponding interfaces. This class uses also defaults for these interfaces. 
+    /// The enter operation reads the circuit's state, but does not block.
+    /// The implementations of the decision of opening the circuit and the strategy of closing back can be outside this class and hooked via the corresponding interfaces. This class also uses defaults for these interfaces. 
     /// </remarks>
 
     public sealed class CircuitBreaker : ICircuitBreaker, IDisposable
     {
         private ReaderWriterLockSlim _readerWriterLockSlim = new ReaderWriterLockSlim();
-        private bool _open = true;
+        private bool _closed = true;
         private Exception _systemException = null;
 
-        private ICloseCircuitStrategy _closeCircuitStrategy;
-        private IReopenCircuitStrategy _reopenCircuitStrategy;
+        private IOpenCircuitStrategy _openCircuitStrategy;
+        private ICloseBackCircuitStrategy _closeBackCircuitStrategy;
 
         /// <summary>
         /// Creates a CircuitBreaker using default closing/reopening implementations. 
         /// </summary>
         public CircuitBreaker()
-            : this(new AlwaysCloseCircuit(), new DelayStrategy(200))
+            : this(new OpenOnAnyFailureCircuit(), new DelayStrategy(200))
         {
         }
 
         /// <summary>
-        /// Creates a CircuitBreaker based on the given close circuit strategy and reopen circuit strategy.
+        /// Creates a CircuitBreaker based on the given strategies.
         /// </summary>
-        /// <param name="closeCircuitStrategy">Accepts an implementation for the decision of closing this circuit.</param>
-        /// <param name="reopenCircuitStrategy">Accepts an implementation for the reopening this circuit.</param>
-        public CircuitBreaker(ICloseCircuitStrategy closeCircuitStrategy, IReopenCircuitStrategy reopenCircuitStrategy)
+        /// <param name="openCircuitStrategy">Accepts an implementation for the decision of opening this circuit.</param>
+        /// <param name="closeBackCircuitStrategy">Accepts an implementation for the when/how to close back this circuit.</param>
+        public CircuitBreaker(IOpenCircuitStrategy openCircuitStrategy, ICloseBackCircuitStrategy closeBackCircuitStrategy)
         {
-            if (closeCircuitStrategy == null) throw new ArgumentNullException(nameof(closeCircuitStrategy));
-            if (reopenCircuitStrategy == null) throw new ArgumentNullException(nameof(reopenCircuitStrategy));
+            if (openCircuitStrategy == null) throw new ArgumentNullException(nameof(openCircuitStrategy));
+            if (closeBackCircuitStrategy == null) throw new ArgumentNullException(nameof(closeBackCircuitStrategy));
 
-            _closeCircuitStrategy = closeCircuitStrategy;
-            _reopenCircuitStrategy = reopenCircuitStrategy;
+            _openCircuitStrategy = openCircuitStrategy;
+            _closeBackCircuitStrategy = closeBackCircuitStrategy;
         }
 
         /// <summary>
-        /// Executes the external system's action if the circuit breaker is open, otherwise throws the exception that closed this circuit so the external system is not accessed by other clients of this CircuitBreaker.
-        /// The circuit is closed if the original exception matches the closing strategy.
-        /// A reopening operation is started after the circuit is closed.
+        /// Executes the external system's action if the circuit breaker is close, otherwise throws the exception that made this circuit to open, so the external system is not accessed by other clients of this CircuitBreaker.
+        /// The circuit opens if the original exception matches the closing strategy.
+        /// A closing back operation is started after the circuit is closed.
         /// </summary>
         /// <param name="action">The delegate which encapsulates the access to the external system.</param>
-        public void PassThrough(Action action)
+        public void Enter(Action action)
         {
-            if (_open)
+            TryEnterOtherwiseRethrow();
+
+            //test the system
+            try
             {
-                try
-                {
-                    action();
-                }
-                catch (Exception exception)
-                {
-                    _systemException = exception;
-                    if (_closeCircuitStrategy.CloseWhen(exception))
-                    {
-                        Close();
-                        _reopenCircuitStrategy.PlanForOpen(this);
-                    }
-                    throw exception;
-                }
+                action.Invoke();
             }
-            else
+            catch (Exception exception)
             {
-                throw _systemException;
+                SetSystemException(exception);
+
+                ThrowSystemException();
             }
-        }
-        /// <summary>
-        /// Open the circuit.
-        /// </summary>
-        public void SwitchOn()
-        {
-            Open();
         }
 
         /// <summary>
-        /// Open the circuit in a concurrent fashion. If another thread tries to close this circuit, then it has to wait first for this operation to finish.
+        /// Let the current client enter the circuit, but if it is open, then throw.
         /// </summary>
-        private void Open()
+        public void TryEnterOtherwiseRethrow()
         {
-            _readerWriterLockSlim.EnterWriteLock();
-            _open = true;
-            _readerWriterLockSlim.ExitWriteLock();
+            //the circuit is open because of a previous failure of the external system
+            //rethrow this failure back to the client as it would have been a new external system failure
+            if (!_closed)
+            {
+                ThrowSystemException();
+            }
+        }
+
+        /// <summary>
+        /// Let the circuit to behave based on this exception.
+        /// </summary>
+        /// <param name="exception">The exception that might make the circuit to get opened.</param>
+        public void SetSystemException(Exception exception)
+        {
+            _systemException = exception;
+
+            if (_openCircuitStrategy.OpenWhen(exception))
+            {
+                Open();
+                PlanCircuitForClosing();
+            }
+        }
+        /// <summary>
+        /// Close the circuit.
+        /// </summary>
+        public void CloseBack()
+        {
+            Close();
         }
 
         /// <summary>
         /// Close the circuit in a concurrent fashion. If another thread tries to close this circuit, then it has to wait first for this operation to finish.
+        /// </summary>
         private void Close()
         {
             _readerWriterLockSlim.EnterWriteLock();
-            _open = false;
+            _closed = true;
             _readerWriterLockSlim.ExitWriteLock();
+        }
+
+        /// <summary>
+        /// Open the circuit in a concurrent fashion. If another thread tries to open this circuit, then it has to wait first for this operation to finish.
+        private void Open()
+        {
+            _readerWriterLockSlim.EnterWriteLock();
+            _closed = false;
+            _readerWriterLockSlim.ExitWriteLock();
+        }
+
+        private void PlanCircuitForClosing()
+        {
+            _closeBackCircuitStrategy.Close(this);
+        }
+
+        private void ThrowSystemException()
+        {
+            throw _systemException;
         }
 
         /// <summary>
         /// Retruns if the CircuitBreaker is open or not
         /// </summary>
-        public bool IsOpen => _open;
+        public bool IsClosed => _closed;
 
-        /// <summary>
-        /// Replace the circuit strategy. This operation creates a new CircuitBreaker using the other dependecies, but does not carry the state this one.
-        /// </summary>
-        /// <param name="closeCircuitStrategy">Accepts an implementation for the decision of closing this circuit.</param>
-        /// <param name="reopenCircuitStrategy">Accepts an implementation for the reopening this circuit.</param>
-        /// <returns>A new CircuitBreaker</returns>
-        public CircuitBreaker WithCloseCircuitStrategy(ICloseCircuitStrategy closeCircuitStrategy)
+        public CircuitBreakerScope GetScope()
         {
-            if (closeCircuitStrategy == null) throw new ArgumentNullException(nameof(closeCircuitStrategy));
-
-            return new CircuitBreaker(closeCircuitStrategy, this._reopenCircuitStrategy);
+            return new CircuitBreakerScope(this);
         }
-
-        /// <summary>
-        /// Replace the circuit strategy. This operation creates a new CircuitBreaker using the other dependecies, but does not carry the state this one.
-        /// </summary>
-        /// <param name="reopenCircuitStrategy">Accepts an implementation for the reopening this circuit.</param>
-        /// <returns>A new CircuitBreaker</returns>
-        public CircuitBreaker WithReopenCircuitStrategy(IReopenCircuitStrategy reopenCircuitStrategy)
-        {
-            if (reopenCircuitStrategy == null) throw new ArgumentNullException(nameof(reopenCircuitStrategy));
-
-            return new CircuitBreaker(this._closeCircuitStrategy, reopenCircuitStrategy);
-        }
-
         /// <summary>
         /// Dispose the ReaderWriterLockSlim used by this class.
         /// </summary>

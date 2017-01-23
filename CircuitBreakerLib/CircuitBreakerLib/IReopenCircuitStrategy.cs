@@ -2,14 +2,14 @@
 namespace CircuitBreakerLib
 {
     /// <summary>
-    /// Provides a strategy to reopen a closed circuit.
+    /// Provides a strategy to close a circuit that has been open by an external system failure.
     /// </summary>
-    public interface IReopenCircuitStrategy
+    public interface ICloseBackCircuitStrategy
     {
         /// <summary>
-        /// Open the circuit by this strategy.
+        /// Close the circuit using this strategy.
         /// </summary>
-        /// <param name="circuitBreaker">The circuit breaker to open.</param>
-        void PlanForOpen(ICircuitBreaker circuitBreaker);
+        /// <param name="circuitBreaker">The circuit breaker to close.</param>
+        void Close(ICircuitBreaker circuitBreaker);
     }
 }
